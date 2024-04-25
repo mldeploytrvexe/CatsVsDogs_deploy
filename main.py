@@ -1,11 +1,20 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, Request, Form
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import torch
 from model import transfer_model
 import copy
-import cv2
 from predict import predict_img_class
+from typing import List, Dict
+from pydantic import BaseModel
+from random import shuffle
+
+
+class Item(BaseModel):
+    loc: list
+    msg: str
+    type: str
 
 
 UPLOAD_DIR = Path() / 'uploads'
@@ -24,14 +33,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post('/uploadfile/')
+@app.post('/uploadfile')
 async def create_upload_file(file_upload: UploadFile):
     data = await file_upload.read()
     save_to = UPLOAD_DIR / file_upload.filename
     with open(save_to, 'wb') as f:
         f.write(data)
-    
     pr = predict_img_class(upl_model, f'uploads/{file_upload.filename}', device)
     pr = int((pr.cpu().detach())[0])
+    return 'собака' if pr==0 else 'кошка'
 
-    return 'dog' if pr==0 else 'cat'
+@app.post('/uploadfeedback')
+async def feedback(request: Request):
+    text = await request.form()
+    #print(text['text_upload'])
+    txt = text['text_upload']
+    if txt != '':
+        with open("feedbacks.txt", 'r') as file:
+            lines = file.readlines()
+            a = [line for line in lines]
+            #print(len(a))
+        with open("feedbacks.txt", 'w') as file:
+            if len(a) != 0:
+                #print(len(a))
+                file.writelines(a)
+                file.write(f'\n{len(a)+1} {txt}')
+            else:
+                file.write(f'{len(a)+1} {txt}')
+        return 'feedback delivered'
+    else:
+        return 'nothing to deliver'
+    
+
+@app.get('/loadfeedbacks')
+async def load_feedback():
+    with open("feedbacks.txt", 'r') as file:
+            lines = file.readlines()
+    shuffle(lines)
+    #print(lines)
+    return lines[:3]
